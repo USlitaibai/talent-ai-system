@@ -7,7 +7,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 
-resume_path = BASE / "data" / "resumes" / "test.docx"
+resume_path = BASE / "data" / "resumes" / "test.txt"
 # 想测试其他格式时，只需改成：
 # test.txt
 # test.docx

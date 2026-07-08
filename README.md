@@ -102,35 +102,20 @@ talent-ai-system
 
 ```text
 TXT / DOCX / PDF
-
         │
-
         ▼
-
 Parser（解析文本）
-
         │
-
         ▼
-
 Qwen3（本地LLM）
-
         │
-
         ▼
-
 JSON结构化信息
-
         │
-
         ▼
-
 保存到本地（V1）
-
         │
-
         ▼
-
 MySQL（V2）
 ```
 
@@ -141,7 +126,7 @@ MySQL（V2）
 ## 1. 克隆项目
 
 ```bash
-git clone https://github.com/你的GitHub用户名/talent-ai-system.git
+git clone https://github.com/USlitaibai/talent-ai-system.git
 ```
 
 进入项目
