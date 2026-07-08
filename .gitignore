@@ -5,14 +5,15 @@ __pycache__/
 # Virtual Environment
 venv/
 
-# Environment Variables
+# IDE
+.vscode/
+.idea/
+
+# Environment
 .env
 
-# VSCode
-.vscode/
+# Output Files
+data/output/*.json
 
-# Upload files
-uploads/
-
-# Database
-*.db
+# Logs
+*.log

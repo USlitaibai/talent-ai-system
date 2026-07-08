@@ -1,7 +1,7 @@
 """
 config.py
 
-项目配置文件（V1）
+项目配置（V1）
 """
 
 from pathlib import Path
@@ -18,5 +18,12 @@ RESUME_DIR = DATA_DIR / "resumes"
 # 输出目录
 OUTPUT_DIR = DATA_DIR / "output"
 
-# Ollama模型
+# Ollama 模型
 MODEL_NAME = "qwen3:4b"
+
+# 支持的文件格式
+SUPPORTED_EXTENSIONS = {
+    ".txt",
+    ".pdf",
+    ".docx"
+}
