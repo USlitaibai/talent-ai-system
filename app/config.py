@@ -1,29 +1,24 @@
-"""
-config.py
-
-项目配置（V1）
-"""
-
+import os
 from pathlib import Path
 
-# 项目根目录
-BASE_DIR = Path(__file__).resolve().parent.parent
+from dotenv import load_dotenv
 
-# 数据目录
-DATA_DIR = BASE_DIR / "data"
+BASE = Path(__file__).resolve().parent.parent
 
-# 简历目录
-RESUME_DIR = DATA_DIR / "resumes"
+load_dotenv(BASE / ".env")
 
-# 输出目录
-OUTPUT_DIR = DATA_DIR / "output"
+# ========= MySQL =========
 
-# Ollama 模型
-MODEL_NAME = "qwen3:4b"
+DB_HOST = os.getenv("DB_HOST")
 
-# 支持的文件格式
-SUPPORTED_EXTENSIONS = {
-    ".txt",
-    ".pdf",
-    ".docx"
-}
+DB_PORT = os.getenv("DB_PORT")
+
+DB_USER = os.getenv("DB_USER")
+
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+DB_NAME = os.getenv("DB_NAME")
+
+# ========= Ollama =========
+
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")

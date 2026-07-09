@@ -1,19 +1,30 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
 
 # Virtual Environment
 venv/
+.venv/
 
-# IDE
+# VSCode
 .vscode/
-.idea/
 
 # Environment
 .env
 
-# Output Files
-data/output/*.json
+# Output
+data/output/
+
+# Upload Files
+data/uploads/
 
 # Logs
-*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

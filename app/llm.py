@@ -1,5 +1,8 @@
 import json
+
 from ollama import chat
+
+from app.config import OLLAMA_MODEL
 
 
 def extract_resume_info(text: str) -> dict:
@@ -37,7 +40,7 @@ def extract_resume_info(text: str) -> dict:
 """
 
     response = chat(
-        model="qwen3:4b",
+        model=OLLAMA_MODEL,
         messages=[
             {
                 "role": "user",
@@ -54,3 +57,16 @@ def extract_resume_info(text: str) -> dict:
     result = result.strip()
 
     return json.loads(result)
+
+
+if __name__ == "__main__":
+    test_text = """
+姓名：张伟
+学校：上海交通大学
+专业：计算机科学与技术
+研究方向：人工智能、机器学习
+技能：Python、PyTorch、深度学习
+发表论文：3篇
+"""
+
+    print(extract_resume_info(test_text))
