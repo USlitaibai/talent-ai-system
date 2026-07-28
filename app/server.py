@@ -1,83 +1,91 @@
-from pathlib import Path
-import shutil
+"""
+FastAPI 项目启动入口
 
-from fastapi import FastAPI, File, UploadFile
+整个项目唯一启动入口。
 
-from app.crud import (
-    save_resume,
-    get_all_resumes,
-    get_resume_by_id
-)
-from app.llm import extract_resume_info
-from app.parser import parse_resume
-from app.response import success, fail
+负责：
+
+1. 创建 FastAPI
+2. 注册所有业务 Router
+3. 提供首页接口
+"""
+
+from fastapi import FastAPI
+
+from app.common.response import success
+
+from app.resume.api import router as resume_router
+from app.talent.api import router as talent_router
+from app.jd.api import router as jd_router
+
+from app.knowledge.api import router as knowledge_router
+
+from app.analysis.api import router as analysis_router
+
+from app.review.api import router as review_router
+
+from app.export.api import router as export_router
+
+from app.core.database import engine
+from app.models import Base
+
+from app.system.api import router as system_router
+
 
 app = FastAPI(
-    title="AI人才简历解析系统",
-    version="2.0.0"
+    title="TALENT-AI-SYSTEM",
+    description="AI 人才知识库系统",
+    version="1.0.0"
 )
+# ==========================
+# 自动创建数据库表
+# ==========================
 
-BASE = Path(__file__).resolve().parent.parent
-
-UPLOAD_DIR = BASE / "data" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-ALLOWED_SUFFIX = {
-    ".txt",
-    ".docx",
-    ".pdf"
-}
-
+Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def root():
+    """
+    系统首页
+    """
+
     return success(
-        message="AI Resume Parser API"
+        message="TALENT-AI-SYSTEM is running."
     )
 
 
-@app.post("/parse")
-async def parse(file: UploadFile = File(...)):
+# ==========================
+# 注册业务模块
+# ==========================
 
-    suffix = Path(file.filename).suffix.lower()
+app.include_router(resume_router)
+app.include_router(talent_router)
+app.include_router(jd_router)
+app.include_router(knowledge_router)
+app.include_router(analysis_router)
+app.include_router(review_router)
+app.include_router(export_router)
+app.include_router(system_router)
+# 后续开发时继续添加
+#
+# app.include_router(talent_router)1
+# app.include_router(review_router)1
+# app.include_router(analysis_router)1
+# app.include_router(knowledge_router)1
+# app.include_router(export_router)1
+# app.include_router(system_router)1
 
-    if suffix not in ALLOWED_SUFFIX:
-        return fail(
-            400,
-            "Only txt/docx/pdf files are supported."
-        )
+# ==========================================================
+# 启动入口
+# ==========================================================
 
-    save_path = UPLOAD_DIR / file.filename
+if __name__ == "__main__":
 
-    with open(save_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    import uvicorn
 
-    resume_text = parse_resume(save_path)
-
-    result = extract_resume_info(resume_text)
-
-    save_resume(result)
-
-    return success(result)
-
-
-@app.get("/resumes")
-def get_resumes():
-
-    return success(
-        get_all_resumes()
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        reload=False
     )
-
-
-@app.get("/resume/{resume_id}")
-def get_resume(resume_id: int):
-
-    result = get_resume_by_id(resume_id)
-
-    if result is None:
-        return fail(
-            404,
-            "Resume not found."
-        )
-
-    return success(result)
