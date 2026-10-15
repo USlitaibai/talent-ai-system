@@ -305,6 +305,13 @@ class VectorStore:
         knowledge_id: int
     ):
 
+        # 兼容早期没有写入 id 的存量知识，避免 KeyError
+        if knowledge_id is None:
+
+            logger.info("知识 ID 为空，跳过删除")
+
+            return False
+
         new_metadata = []
 
         vectors = []
@@ -313,7 +320,7 @@ class VectorStore:
 
         for i, item in enumerate(self.metadata):
 
-            if item["id"] == knowledge_id:
+            if item.get("id") == knowledge_id:
 
                 deleted = True
 
@@ -365,12 +372,29 @@ class VectorStore:
         resume_id: int | None = None,
         job_id: int | None = None
     ):
+        """
+        更新知识
+
+        返回：新的知识 ID（int）或 None（未新增成功时）
+        """
+
+        if knowledge_id is None:
+
+            logger.info("知识 ID 为空，改为直接新增知识")
+
+            return self.add(
+                text=new_text,
+                embedding=embedding,
+                source=source,
+                resume_id=resume_id,
+                job_id=job_id
+            )
 
         self.delete(
             knowledge_id
         )
 
-        self.add(
+        return self.add(
             text=new_text,
             embedding=embedding,
             source=source,

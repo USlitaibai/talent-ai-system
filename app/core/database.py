@@ -7,6 +7,7 @@ from app.core.config import (
     DB_USER,
     DB_PASSWORD,
     DB_NAME,
+    DEBUG_SQL,
 )
 
 DATABASE_URL = (
@@ -16,7 +17,7 @@ DATABASE_URL = (
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=DEBUG_SQL,
 )
 
 SessionLocal = sessionmaker(

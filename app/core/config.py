@@ -107,3 +107,7 @@ DEBUG = True
 
 # 是否打印 Retriever Context
 PRINT_CONTEXT = True
+
+# 是否回显 SQLAlchemy 执行的 SQL（开发排查用，默认关闭）
+# 需要时在 .env 中设置 DEBUG_SQL=true
+DEBUG_SQL = os.getenv("DEBUG_SQL", "false").lower() in ("1", "true", "yes", "on")

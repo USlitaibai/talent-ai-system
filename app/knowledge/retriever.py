@@ -21,7 +21,7 @@ def retrieve(
     return hybrid_search(
         question=question,
         embedding=embedding,
-        final_top_k=top_k
+        top_k=top_k
     )
 
 
@@ -37,7 +37,7 @@ def retrieve_by_embedding(
     return hybrid_search(
         question=question,
         embedding=embedding,
-        final_top_k=top_k
+        top_k=top_k
     )
 
 

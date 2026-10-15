@@ -20,8 +20,8 @@ from app.review.repository import (
 )
 
 from app.knowledge.repository import (
-    update_document,
-    delete_document,
+    update_document_by_resume,
+    delete_document_by_resume,
 )
 
 
@@ -102,8 +102,8 @@ def update_review_result(
 
     knowledge = build_resume_text(data)
 
-    update_document(
-        knowledge_id=resume_id,
+    update_document_by_resume(
+        resume_id=resume_id,
         text=knowledge,
         source="resume"
     )
@@ -131,7 +131,7 @@ def delete_review_result(
 
         raise ValueError("简历不存在")
 
-    delete_document(
+    delete_document_by_resume(
         resume_id
     )
 

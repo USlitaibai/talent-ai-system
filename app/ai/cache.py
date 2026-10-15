@@ -19,6 +19,7 @@ from app.core.config import (
     STRING_CACHE_SIZE,
     SEMANTIC_CACHE_SIZE,
     SEMANTIC_CACHE_THRESHOLD,
+    PRINT_CONTEXT,
 )
 
 
@@ -139,11 +140,13 @@ class AICache:
 
             )
 
-            print(
+            if PRINT_CONTEXT:
 
-                f'Compare: {item["question"]} -> {score:.4f}'
+                print(
 
-            )
+                    f'Compare: {item["question"]} -> {score:.4f}'
+
+                )
 
             if score > best_score:
 
@@ -151,19 +154,23 @@ class AICache:
 
                 best_answer = item["answer"]
 
-        print(
-
-            f"Best Score = {best_score:.4f}"
-
-        )
-
-        if best_score >= threshold:
+        if PRINT_CONTEXT:
 
             print(
 
-                f"Semantic Cache Hit: {best_score:.4f}"
+                f"Best Score = {best_score:.4f}"
 
             )
+
+        if best_score >= threshold:
+
+            if PRINT_CONTEXT:
+
+                print(
+
+                    f"Semantic Cache Hit: {best_score:.4f}"
+
+                )
 
             return best_answer
 

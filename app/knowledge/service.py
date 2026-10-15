@@ -14,6 +14,7 @@ from app.ai.prompt import build_rag_prompt
 from app.core.config import (
     OLLAMA_MODEL,
     RAG_MAX_CONTEXT_LINES,
+    PRINT_CONTEXT,
 )
 
 from app.core.logger import logger
@@ -116,10 +117,12 @@ def ask(question: str):
         max_lines=RAG_MAX_CONTEXT_LINES
     )
 
-    print("=" * 60)
-    print("Knowledge Context:")
-    print(context)
-    print("=" * 60)
+    if PRINT_CONTEXT:
+
+        print("=" * 60)
+        print("Knowledge Context:")
+        print(context)
+        print("=" * 60)
 
     if not context.strip():
 

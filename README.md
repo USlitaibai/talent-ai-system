@@ -1,274 +1,538 @@
 # Talent AI System
 
-> 🚀 基于 Ollama + Qwen3 的本地智能简历解析系统
+> 🚀 基于本地大模型（Ollama + Qwen3）与向量检索的**智能人才知识库系统**
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688)
 ![Ollama](https://img.shields.io/badge/Ollama-Local%20LLM-green)
 ![Qwen3](https://img.shields.io/badge/Qwen3-4B-orange)
+![FAISS](https://img.shields.io/badge/FAISS-Vector%20Store-purple)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
 
-# 项目简介
+## 项目简介
 
-Talent AI System 是一个基于本地大语言模型（LLM）的智能简历解析系统。
+Talent AI System 是一个面向企业招聘场景的本地化 AI 系统。
 
-系统能够自动读取不同格式的简历（TXT、DOCX、PDF），调用本地部署的 Qwen3 模型提取人才信息，并生成标准 JSON 数据，为后续的人才知识库、招聘管理系统、RAG 检索系统等提供数据基础。
+系统自动读取简历与岗位 JD（TXT / DOCX / PDF，支持 ZIP 批量导入），调用本地部署的
+Qwen3 模型抽取结构化人才信息，写入 MySQL 与 FAISS 向量库，并提供：
 
-整个系统无需调用 OpenAI API，所有数据均在本地完成处理，更适合企业内网部署及隐私场景。
+- **RAG 知识库问答**：双路检索 + 重排，回答"谁熟悉 Python"这类人才查询
+- **简历 × 岗位智能匹配**：技能 / 专业 / 学历加权评分
+- **人才数据分析**：Dashboard、人才画像、图表数据和完整分析报告
+- **人工审核**：HR 修改简历后自动同步知识库
+- **数据导出**：一键导出 Excel 人才表
+
+**全程本地运行，不调用任何外部大模型 API**，数据不出内网，适合隐私敏感的招聘场景。
 
 ---
 
-# V1 功能
+## 已实现功能
 
-目前已完成的功能：
+### 1. 简历解析与入库
 
-- ✅ TXT 简历解析
-- ✅ DOCX 简历解析
-- ✅ PDF 简历解析
-- ✅ 自动识别文件格式
-- ✅ 本地 Ollama 调用
-- ✅ Qwen3 信息抽取
-- ✅ JSON 数据导出
+| 功能 | 说明 |
+|------|------|
+| 多格式解析 | TXT / DOCX / PDF，自动识别后缀（PyMuPDF + python-docx） |
+| AI 信息抽取 | Qwen3 抽取：姓名、学校、专业、研究方向、技能、论文 |
+| 单份上传 | `POST /resume/upload` |
+| 多文件批量上传 | `POST /resume/batch-upload`，同名文件自动重命名 |
+| ZIP 异步导入 | `POST /resume/zip-upload`，后台任务 + 进度轮询，递归扫描目录 |
+| 重复检测 | 按「姓名 + 学校 + 专业」去重 |
+| 自动入库 | 结构化数据写入 MySQL，同时生成知识文本写入向量库 |
 
-示例输出：
+### 2. 知识库 / RAG 问答
 
-```json
-{
-    "name":"张伟",
-    "school":"上海交通大学",
-    "major":"计算机科学与技术",
-    "research_direction":"人工智能、机器学习",
-    "skills":[
-        "Python",
-        "PyTorch",
-        "深度学习"
-    ],
-    "papers":"3篇"
-}
+| 功能 | 说明 |
+|------|------|
+| 文本向量化 | Ollama `nomic-embed-text`（768 维） |
+| 向量库 | FAISS `IndexFlatL2` + JSON 元数据，落盘到 `data/vectors/` |
+| 关键词检索 | BM25 + jieba 中文分词 |
+| 混合检索 | FAISS 与 BM25 各取 `max(top_k*4, 10)` → 合并去重 → 重排 |
+| 二次重排 | `BAAI/bge-reranker-v2-m3` CrossEncoder 精排 |
+| 上下文压缩 | 去重 + 截断至 8 行，控制 Prompt 体积 |
+| 双层缓存 | L1 精确缓存（LRU 100）+ L2 语义缓存（余弦阈值 0.85） |
+| 防幻觉 Prompt | 强制"仅依据知识回答"，知识不足时固定回答"知识库中暂无相关信息。" |
+
+### 3. 岗位 JD
+
+上传 JD（TXT / DOCX / PDF）→ AI 抽取 9 个字段（岗位、公司、学历、专业、经验、
+技能、薪资、城市、描述）→ 去重入库 → 自动写入知识库。支持列表与详情查询。
+
+### 4. 人才检索与匹配
+
+| 功能 | 说明 |
+|------|------|
+| 关键词搜索 | 姓名 / 学校 / 专业 / 研究方向 / 技能 / 论文 六字段模糊匹配 |
+| 人才排序 | 按技能交集比例对候选人降序排名 |
+| AI 推荐报告 | 针对「简历 + 岗位」生成优势、劣势、总结与推荐结论 |
+| 简历×岗位匹配 | 技能 70% + 专业 20% + 学历 10% 加权评分，附缺失技能提示 |
+
+### 5. 数据分析
+
+- **Dashboard**：简历数 / 岗位数 + Top 学校 / 专业 / 技能 / 公司 / 岗位 / 城市
+- **人才画像**：最高频学校、专业、技能、公司、岗位
+- **统计分析**：学校、专业、技能、研究方向、公司、岗位、城市、
+  学历分布、薪资分布、岗位技能分布
+- **完整报告**：`generated_at` + dashboard + summary + profile + charts + AI 摘要
+
+### 6. 人工审核
+
+简历列表 / 详情 / 修改 / 删除 / 计数。**修改或删除简历时自动同步向量库**，
+保证知识库与数据库一致。
+
+### 7. 数据导出
+
+一键导出 Excel（openpyxl），支持导出全部或按 ID 导出指定简历，带表头样式与列宽。
+
+### 8. 系统与运维
+
+- **用户系统**：注册 / 登录 / 查询，密码 bcrypt 哈希，JWT（HS256，24 小时）鉴权
+- **统一响应**：`{code, message, data}` 全局一致
+- **日志**：控制台 + `app.log`（5MB × 5 轮转）+ `error.log`（仅 ERROR）
+- **指标埋点**：LLM / Embedding 调用次数与耗时、缓存命中率、RAG 耗时
+- **自动建表**：启动时 `Base.metadata.create_all()`
+
+---
+
+## 系统架构
+
+### 分层结构
+
+```
+                    接入层   app/server.py  (FastAPI，/docs 自动生成)
+                                  │  统一响应 app/common/response.py
+   ┌────────┬────────┬─────────┬──┴──────┬─────────┬────────┬────────┐
+ Resume    Talent     JD     Knowledge  Analysis  Review   Export   System
+ 简历域    人才域    岗位域   知识/RAG域   分析域    审核域   导出域   用户域
+   └────────┴────────┴─────────┴─────────┴─────────┴────────┴────────┘
+        API  →  Service  →  Repository  →  Model / 向量库     （各域四层同构）
+   ┌──────────────────────────────────────────────────────────────┐
+   │ 共享底座 core：config(.env) · database(MySQL) · logger(轮转)   │
+   │ 共享能力 ai ：llm · prompt · parser · cache · reranker        │
+   └──────────────────────────────────────────────────────────────┘
+   存储：MySQL(resume/job/user) + FAISS(data/vectors) + 内存缓存/任务表
+```
+
+### 四条核心数据流
+
+**① 简历入库**
+
+```
+TXT/DOCX/PDF/ZIP
+      │  Parser 解析文本
+      ▼
+Qwen3 结构化抽取 → 重复检测 → MySQL
+      │
+      ▼  拼接知识文本
+Embedding(768维) → FAISS + 元数据
+```
+
+**② RAG 问答**
+
+```
+用户问题
+   │
+   ├─→ L1 精确缓存 ──命中──→ 直接返回
+   ▼
+Embedding
+   │
+   ├─→ L2 语义缓存(余弦≥0.85) ──命中──→ 直接返回
+   ▼
+FAISS 检索 ⊕ BM25 检索 → 合并去重 → CrossEncoder 重排 → 上下文压缩
+   │
+   ▼
+防幻觉 Prompt → Qwen3 → 答案 → 回写 L1 + L2 缓存
+```
+
+**③ 简历 × 岗位匹配**
+
+```
+resume_id + job_id
+      │
+      ├─ 技能匹配（70%）
+      ├─ 专业匹配（20%）
+      └─ 学历匹配（10%）
+      ▼
+加权评分 + 分档摘要 + 缺失技能提示
+```
+
+**④ 人工审核联动**
+
+```
+HR 修改简历 → 更新 MySQL → 重建知识文本 → 定位向量条目 → 更新向量库
+HR 删除简历 → 删除 MySQL → 定位向量条目 → 删除向量库
 ```
 
 ---
 
-# 技术栈
+## 技术栈
 
 | 技术 | 用途 |
 |------|------|
 | Python 3.12 | 项目开发 |
-| Ollama | 本地模型部署 |
-| Qwen3 4B | 大语言模型 |
-| PyMuPDF | PDF解析 |
-| python-docx | Word解析 |
-| SQLAlchemy | 数据库（V2） |
-| FastAPI | Web接口（V2） |
-| Git | 版本管理 |
+| FastAPI + Uvicorn | Web 接口与 ASGI 服务 |
+| SQLAlchemy 2.0 | ORM / 数据访问 |
+| MySQL | 结构化数据存储 |
+| Ollama | 本地大模型运行时 |
+| Qwen3 4B | 信息抽取与 RAG 生成 |
+| nomic-embed-text | 文本向量化（768 维） |
+| FAISS | 本地向量数据库 |
+| BM25 (rank-bm25) + jieba | 中文关键词检索 |
+| sentence-transformers | CrossEncoder 重排 |
+| PyMuPDF / python-docx | PDF / DOCX 解析 |
+| openpyxl | Excel 导出 |
+| JWT (python-jose) + passlib | 认证与密码哈希 |
+| python-dotenv | 环境变量配置 |
 
 ---
 
-# 项目结构
+## 项目结构
 
-```text
+```
 talent-ai-system
 │
 ├── app/
-│   ├── config.py          # 项目配置
-│   ├── parser.py          # 简历解析
-│   ├── llm.py             # LLM调用
-│   ├── exporter.py        # JSON导出
-│   ├── review.py          # 数据检查
-│   └── main.py            # 程序入口
+│   ├── server.py            # 唯一启动入口，注册所有 Router
+│   ├── create_tables.py     # 手动建表脚本
+│   │
+│   ├── core/                # 共享底座
+│   │   ├── config.py        # 统一配置（读取 .env）
+│   │   ├── database.py      # MySQL 引擎与会话
+│   │   └── logger.py        # 日志（轮转 + 错误单独文件）
+│   │
+│   ├── common/
+│   │   └── response.py      # 统一 API 返回格式
+│   │
+│   ├── models/              # ORM 模型
+│   │   ├── resume.py        # 简历表
+│   │   ├── jd.py            # 岗位表
+│   │   └── user.py          # 用户表
+│   │
+│   ├── ai/                  # 共享 AI 能力
+│   │   ├── llm.py           # Ollama 调用与抽取
+│   │   ├── prompt.py        # Prompt 模板
+│   │   ├── parser.py        # AI 返回 JSON 清洗解析
+│   │   ├── cache.py         # 双层缓存（L1 + 语义）
+│   │   └── reranker.py      # CrossEncoder 重排
+│   │
+│   ├── resume/              # 简历域
+│   │   ├── api.py           # 上传 / 批量 / ZIP / 列表 / 详情
+│   │   ├── service.py       # 业务编排
+│   │   ├── parser.py        # 三格式解析
+│   │   ├── repository.py    # 简历数据访问
+│   │   ├── zip_import.py    # ZIP 解压与扫描
+│   │   ├── tagger.py        # 技能标签规则
+│   │   └── batch_parser.py  # 目录级批处理
+│   │
+│   ├── jd/                  # 岗位域
+│   │   ├── api.py  service.py  parser.py  repository.py  schema.py
+│   │
+│   ├── knowledge/           # 知识库 / RAG 域
+│   │   ├── api.py           # 增删查 / 问答 / 计数
+│   │   ├── service.py       # RAG 主流程
+│   │   ├── vector_store.py  # FAISS 向量库
+│   │   ├── embedding.py     # 向量化
+│   │   ├── bm25.py          # BM25 检索
+│   │   ├── hybrid.py        # 混合检索
+│   │   ├── retriever.py     # 检索入口
+│   │   ├── compressor.py    # 上下文压缩
+│   │   ├── repository.py    # 知识数据访问
+│   │   └── schema.py
+│   │
+│   ├── talent/              # 人才域
+│   │   ├── api.py  service.py  search.py  ranking.py
+│   │   ├── matcher.py  recommender.py  filter.py
+│   │   └── favorite.py  interview.py  offer.py
+│   │
+│   ├── analysis/            # 分析域
+│   │   ├── api.py  service.py  analysis.py
+│   │   ├── dashboard.py  statistics.py  matcher.py
+│   │   ├── report.py
+│   │
+│   ├── review/              # 人工审核域
+│   │   ├── api.py  service.py  repository.py  schema.py  review.py
+│   │
+│   ├── export/              # 导出域
+│   │   ├── api.py  service.py  excel.py  pdf.py  word.py
+│   │
+│   └── system/              # 用户域
+│       ├── api.py  service.py  repository.py  schema.py
+│       ├── auth.py          # JWT + 密码哈希
+│       ├── user.py          # 当前用户依赖
+│       └── metrics.py       # 运行指标
 │
 ├── data/
-│   ├── resumes/
-│   │   ├── test.txt
-│   │   ├── test.docx
-│   │   └── test.pdf
-│   │
-│   └── output/
-│       └── resume.json
+│   ├── resumes/             # 测试简历
+│   ├── uploads/             # 上传文件
+│   ├── output/              # 导出的 Excel
+│   └── vectors/             # FAISS 索引 + 元数据
 │
-├── docs/
-│
-├── tests/
-│
+├── app/logs/                # 运行日志
+├── scripts/init_db.py       # 数据库初始化
 ├── requirements.txt
-├── README.md
-└── .gitignore
+└── README.md
 ```
 
 ---
 
-# 项目流程
+## 快速开始
 
-```text
-TXT / DOCX / PDF
-        │
-        ▼
-Parser（解析文本）
-        │
-        ▼
-Qwen3（本地LLM）
-        │
-        ▼
-JSON结构化信息
-        │
-        ▼
-保存到本地（V1）
-        │
-        ▼
-MySQL（V2）
-```
-
----
-
-# 快速开始
-
-## 1. 克隆项目
+### 1. 克隆项目
 
 ```bash
 git clone https://github.com/USlitaibai/talent-ai-system.git
-```
-
-进入项目
-
-```bash
 cd talent-ai-system
 ```
 
----
+### 2. 创建虚拟环境
 
-## 2. 创建虚拟环境
-
-Windows
+Windows：
 
 ```bash
 python -m venv venv
-
 venv\Scripts\activate
 ```
 
-Linux
+Linux / macOS：
 
 ```bash
 python3 -m venv venv
-
 source venv/bin/activate
 ```
 
----
-
-## 3. 安装依赖
+### 3. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+### 4. 安装并启动 Ollama
 
-## 4. 安装 Ollama
-
-下载：
-
-https://ollama.com/
-
-安装完成后下载模型：
+下载安装：https://ollama.com/
 
 ```bash
 ollama pull qwen3:4b
-```
-
-启动服务：
-
-```bash
+ollama pull nomic-embed-text
 ollama serve
 ```
 
----
+### 5. 配置数据库
 
-## 5. 运行项目
+创建数据库：
+
+```sql
+CREATE DATABASE talent_ai_system DEFAULT CHARSET utf8mb4;
+```
+
+在项目根目录创建 `.env`：
+
+```ini
+# ==========================
+# MySQL
+# ==========================
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=你的密码
+DB_NAME=talent_ai_system
+
+# ==========================
+# Ollama
+# ==========================
+OLLAMA_MODEL=qwen3:4b
+OLLAMA_EMBED_MODEL=nomic-embed-text:latest
+
+# ==========================
+# 可选：开发时回显 SQL
+# ==========================
+DEBUG_SQL=false
+```
+
+### 6. 初始化数据库表
 
 ```bash
-python app/main.py
+python -m scripts.init_db
 ```
 
-程序会：
+也可以直接启动服务，`app/server.py` 会自动建表。
 
-1. 自动读取简历
-2. 调用本地 Qwen3
-3. 提取人才信息
-4. 输出 JSON
-5. 保存到
+### 7. 启动服务
 
+```bash
+python app/server.py
 ```
-data/output/resume.json
+
+服务地址：
+
+- 接口文档（Swagger UI）：http://127.0.0.1:8000/docs
+- 健康检查：http://127.0.0.1:8000/
+
+> ⚠️ 首次启动需要加载重排模型 `BAAI/bge-reranker-v2-m3`（约 2GB），
+> 首次会从 HuggingFace 下载，请保证网络可用；之后走本地缓存。
+> 冷启动约 20~30 秒，属正常现象。
+
+### 8. 快速验证
+
+```bash
+# 上传一份简历
+curl -X POST http://127.0.0.1:8000/resume/upload -F "file=@resume.pdf"
+
+# 看简历列表
+curl http://127.0.0.1:8000/resume/
+
+# 知识库问答
+curl -X POST "http://127.0.0.1:8000/knowledge/chat?question=谁熟悉Python开发？"
+
+# 人才统计
+curl http://127.0.0.1:8000/analysis/dashboard
 ```
 
 ---
 
-# 当前版本
+## API 一览
 
-## V1（已完成）
+共 35 个接口，全部可在 `/docs` 中交互调试。
 
-- 多格式简历解析
-- 本地大模型抽取
-- JSON导出
-- Git版本管理
+### 简历 `/resume`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/resume/upload` | 上传单份简历 |
+| POST | `/resume/batch-upload` | 批量上传多份简历 |
+| POST | `/resume/zip-upload` | ZIP 批量导入（异步，返回 task_id） |
+| GET | `/resume/import-status/{task_id}` | 查询导入进度与结果 |
+| GET | `/resume/import-tasks` | 查看所有导入任务 |
+| GET | `/resume/` | 简历列表 |
+| GET | `/resume/{resume_id}` | 简历详情 |
+
+### 岗位 `/jd`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/jd/upload` | 上传 JD 并 AI 解析入库 |
+| GET | `/jd/` | 岗位列表 |
+| GET | `/jd/{job_id}` | 岗位详情 |
+
+### 知识库 `/knowledge`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/knowledge/add` | 新增知识 |
+| GET | `/knowledge/search` | 混合检索（FAISS + BM25 + 重排） |
+| POST | `/knowledge/chat` | RAG 问答 |
+| DELETE | `/knowledge/delete/{knowledge_id}` | 删除知识 |
+| GET | `/knowledge/count` | 知识数量 |
+
+### 人才 `/talent`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/talent/search` | 关键词搜索人才 |
+| POST | `/talent/ranking` | 按岗位要求排序人才 |
+| POST | `/talent/recommend` | 生成 AI 推荐报告 |
+
+### 分析 `/analysis`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/analysis/dashboard` | Dashboard 数据 |
+| GET | `/analysis/summary` | 首页摘要 |
+| GET | `/analysis/profile` | 人才画像 |
+| GET | `/analysis/chart` | 图表数据 |
+| GET | `/analysis/report` | 完整分析报告 |
+| POST | `/analysis/match` | 简历 × 岗位匹配 |
+
+### 审核 `/review`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/review/list` | 待审核简历列表 |
+| GET | `/review/count` | 简历数量 |
+| GET | `/review/{resume_id}` | 简历详情 |
+| PUT | `/review/{resume_id}` | 修改简历（自动同步知识库） |
+| DELETE | `/review/{resume_id}` | 删除简历（自动同步知识库） |
+
+### 导出 `/export`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/export/excel` | 导出 Excel（可传 `ids` 指定简历） |
+
+### 用户 `/system`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/system/register` | 注册 |
+| POST | `/system/login` | 登录，返回 JWT |
+| GET | `/system/users` | 用户列表（需登录） |
+| GET | `/system/users/{user_id}` | 用户详情（需登录） |
 
 ---
 
-## V2（开发计划）
+## 关键设计说明
 
-预计新增：
+**为什么用「向量 + 关键词」双路检索？**
+纯向量检索对「Python」「FastAPI」这类专有名词的精确匹配不够稳，纯关键词又抓不住
+语义相近的表达。两路各取候选后合并去重，再用 CrossEncoder 精排，召回和准确率都更好。
 
-- MySQL 数据库存储
-- FastAPI 接口
-- 批量简历解析
-- 上传接口
-- 日志系统
-- 配置文件优化
+**为什么要做两层缓存？**
+「谁熟悉 Python」和「谁会 Python 开发」语义相同但字面不同。L1 精确缓存拦重复提问，
+L2 语义缓存（余弦 ≥ 0.85）拦换句话问同一件事的情况，能显著减少 LLM 调用。
+
+**为什么加防幻觉 Prompt？**
+RAG 最大的风险是模型在知识不足时编造答案。Prompt 中强制"只能依据知识回答"，
+并在上下文为空时直接返回固定话术，不走 LLM。
+
+**重排模型什么时候加载？**
+进程启动时加载一次并常驻，避免每次请求重复加载。代价是冷启动约 20~30 秒。
 
 ---
 
-## V3（规划）
+## 当前进度与已知限制
 
-预计新增：
+项目仍在迭代中，以下为当前状态，便于后续开发对照：
 
-- RAG 人才知识库
-- 向量数据库
-- 相似人才搜索
-- Agent 工作流
+**待改进**
+
+- 重排模型在模块导入时加载，导致冷启动较慢，后续可改为懒加载
+- `data/vectors/resume.metadata.json` 中存在早期版本写入的历史条目
+  （缺少 `id` / `resume_id` 字段），当前代码已能自动回填兼容，
+  如需干净数据可删除该文件后重新导入简历
+- 上传接口尚未限制文件体积与解压规模，生产环境需补充校验
+- JWT 密钥目前写在代码中，生产环境应改为读取环境变量
+- 除 `/system/users` 外，其余业务接口暂未挂鉴权
+- 尚缺少单元测试
+
+**规划中**
+
+- 人才流程：收藏 / 面试 / Offer 状态机（已有模块骨架，待接入数据库与接口）
+- 岗位与简历的向量化匹配（当前匹配为规则加权评分）
+- 技能标签自动生成接入主流程（`talent/tagger` 规则已就绪）
+- Docker 部署与一键启动
+- RAG 召回效果评估脚本
 - Web 管理后台
-- Docker 部署
 
 ---
 
-# 项目特点
-
-- 全程本地运行
-- 不依赖 OpenAI API
-- 支持多种简历格式
-- 模块化设计
-- 易于扩展
-- 面向企业招聘场景
-
----
-
-# 开发环境
+## 开发环境
 
 | 软件 | 版本 |
 |------|------|
 | Windows | 11 |
 | Python | 3.12 |
+| MySQL | 8.x |
 | Ollama | 0.31.1 |
 | Qwen3 | 4B |
 | VS Code | Latest |
 
 ---
 
-# License
+## License
 
 MIT License
 
 ---
 
-> 本项目用于学习本地大模型应用开发、人才信息抽取及企业级 AI 系统设计，后续将持续迭代完善。
+> 本项目用于学习本地大模型应用开发、RAG 系统工程化及企业级 AI 系统设计，将持续迭代完善。
