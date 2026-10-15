@@ -8,11 +8,41 @@ LLM Service
 3. 返回结构化 JSON
 """
 
-from ollama import chat
+from ollama import Client
 
 from app.ai.parser import parse_json
-from app.core.config import OLLAMA_MODEL
+from app.core.config import (
+    OLLAMA_MODEL,
+    OLLAMA_BASE_URL,
+)
 from app.core.logger import logger
+
+# ==========================================================
+# Ollama 客户端
+#
+# 必须显式传入 OLLAMA_BASE_URL：
+# ollama 模块级的 chat()/embed() 会固定连 127.0.0.1:11434，
+# 在容器里 app 与 ollama 不是同一台主机，会直接连接失败。
+# 官方文档也推荐使用 Client 实例调用。
+# ==========================================================
+
+_client = None
+
+
+def get_client() -> Client:
+    """
+    获取 Ollama 客户端（懒加载 + 单例）
+    """
+
+    global _client
+
+    if _client is None:
+
+        logger.info(f"初始化 Ollama 客户端：{OLLAMA_BASE_URL}")
+
+        _client = Client(host=OLLAMA_BASE_URL)
+
+    return _client
 
 
 def _chat(prompt: str) -> dict:
@@ -24,7 +54,7 @@ def _chat(prompt: str) -> dict:
 
     try:
 
-        response = chat(
+        response = get_client().chat(
             model=OLLAMA_MODEL,
             messages=[
                 {

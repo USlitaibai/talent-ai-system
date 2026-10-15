@@ -185,6 +185,7 @@ HR 删除简历 → 删除 MySQL → 定位向量条目 → 删除向量库
 | openpyxl | Excel 导出 |
 | JWT (python-jose) + passlib | 认证与密码哈希 |
 | python-dotenv | 环境变量配置 |
+| Docker + Docker Compose | 一键部署（MySQL + Ollama + 应用） |
 
 ---
 
@@ -270,7 +271,12 @@ talent-ai-system
 │   └── vectors/             # FAISS 索引 + 元数据
 │
 ├── app/logs/                # 运行日志
+├── docker/                  # Docker 运行期数据（卷挂载）
 ├── scripts/init_db.py       # 数据库初始化
+├── Dockerfile               # 应用镜像
+├── docker-compose.yml       # 三服务编排
+├── .dockerignore            # 构建上下文排除（关键：排除 venv）
+├── .env.example             # 环境变量模板
 ├── requirements.txt
 └── README.md
 ```
@@ -369,9 +375,11 @@ python app/server.py
 - 接口文档（Swagger UI）：http://127.0.0.1:8000/docs
 - 健康检查：http://127.0.0.1:8000/
 
-> ⚠️ 首次启动需要加载重排模型 `BAAI/bge-reranker-v2-m3`（约 2GB），
-> 首次会从 HuggingFace 下载，请保证网络可用；之后走本地缓存。
-> 冷启动约 20~30 秒，属正常现象。
+> ⚠️ 重排模型 `BAAI/bge-reranker-v2-m3`（约 2GB）采用**懒加载**：
+> 服务启动本身只需几秒，只有**首次调用检索/问答**时才加载模型，
+> 此时会从 HuggingFace 下载，请保证网络可用；之后走本地缓存。
+> 若不想下载该模型，可在 `.env` 中设置 `RERANK_ENABLED=false`，
+> 系统会自动改用 RRF 排名融合兜底。
 
 ### 8. 快速验证
 
@@ -388,6 +396,98 @@ curl -X POST "http://127.0.0.1:8000/knowledge/chat?question=谁熟悉Python开�
 # 人才统计
 curl http://127.0.0.1:8000/analysis/dashboard
 ```
+
+---
+
+## Docker 部署（推荐）
+
+不想手动装 MySQL 和 Ollama？用 Docker Compose 一条命令拉起整套系统。
+
+### 前置要求
+
+- 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Windows / macOS）
+- 建议预留 **10GB 以上磁盘空间**（镜像 + MySQL 数据 + Ollama 模型）
+
+### 一键启动
+
+```bash
+docker compose up -d
+```
+
+这会启动三个服务：
+
+| 服务 | 说明 | 宿主机端口 |
+|------|------|-----------|
+| `mysql` | 数据库，数据持久化在命名卷 `mysql_data` | **3307** → 容器内 3306 |
+| `ollama` | 本地大模型服务，模型持久化在 `ollama_data` | 11434 |
+| `app` | 本系统，依赖前两者就绪后启动 | 8000 |
+
+> ⚠️ **为什么 MySQL 映射到 3307 而不是 3306？**
+> 很多开发者本机已安装 MySQL 并占用 3306，直接映射会导致
+> `bind: Only one usage of each socket address` 启动失败。
+> 因此默认改用 3307，容器内部始终是 3306，应用通过服务名
+> `mysql` 连接，完全不受影响。
+> 如需修改，在 `.env` 中设置 `DB_HOST_PORT=xxxx`。
+
+### 初始化（拉取模型，只需一次）
+
+镜像已就绪，但**容器内的 Ollama 需要拉取模型**（约 2.4GB）：
+
+```bash
+# Linux / macOS
+bash scripts/docker-init.sh
+
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File scripts\docker-init.ps1
+```
+
+脚本会依次等待服务就绪、拉取 `nomic-embed-text` 与 `qwen3:4b`、
+并做健康检查。也可以手动执行：
+
+```bash
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull qwen3:4b
+```
+
+### 访问
+
+- 接口文档：http://localhost:8000/docs
+- 健康检查：http://localhost:8000/
+
+### 常用命令
+
+```bash
+docker compose ps          # 查看状态
+docker compose logs -f app # 查看应用日志
+docker compose down        # 停止（保留数据）
+docker compose down -v     # 停止并删除数据卷
+```
+
+### 关于重排模型
+
+容器中默认设置 `RERANK_ENABLED=false`，**不加载** CrossEncoder 重排模型，
+改用 **RRF（Reciprocal Rank Fusion）排名融合**兜底：
+
+- 优点：无需下载约 2GB 模型，服务秒级启动，镜像更可控
+- 代价：精排效果略降
+
+想启用完整精排，改 `docker-compose.yml` 中：
+
+```yaml
+RERANK_ENABLED: "true"
+```
+
+首次检索时会自动下载模型（约 2GB），之后缓存在容器内。
+
+### 说明
+
+- 镜像基于 `python:3.12-slim`，但依赖中含 `torch` / `sentence-transformers`，
+  因此**首次构建较慢、镜像较大**（实测约 **9.4GB**，含 Linux 版 CUDA 运行时），
+  属预期现象；关闭 `RERANK_ENABLED` 不会减小镜像，因为 `torch`
+  是 `requirements.txt` 中的固定依赖
+- 向量库已预置于 `docker/vectors/`，容器启动即有知识可检索；
+  该目录以卷挂载，新增知识会持久化到宿主机
+- 若只想改代码快速验证，仍推荐本地方式（上文步骤 1~8）
 
 ---
 
@@ -486,7 +586,8 @@ RAG 最大的风险是模型在知识不足时编造答案。Prompt 中强制"�
 并在上下文为空时直接返回固定话术，不走 LLM。
 
 **重排模型什么时候加载？**
-进程启动时加载一次并常驻，避免每次请求重复加载。代价是冷启动约 20~30 秒。
+采用懒加载：进程启动时不加载（启动仅需数秒），首次调用检索时才加载并常驻。
+模型不可用时会自动降级为 RRF 排名融合，保证检索功能不中断。
 
 ---
 
@@ -496,13 +597,14 @@ RAG 最大的风险是模型在知识不足时编造答案。Prompt 中强制"�
 
 **待改进**
 
-- 重排模型在模块导入时加载，导致冷启动较慢，后续可改为懒加载
 - `data/vectors/resume.metadata.json` 中存在早期版本写入的历史条目
   （缺少 `id` / `resume_id` 字段），当前代码已能自动回填兼容，
   如需干净数据可删除该文件后重新导入简历
 - 上传接口尚未限制文件体积与解压规模，生产环境需补充校验
 - JWT 密钥目前写在代码中，生产环境应改为读取环境变量
 - 除 `/system/users` 外，其余业务接口暂未挂鉴权
+- 依赖中含 `torch` / `sentence-transformers`，导致镜像与安装体积较大；
+  若关闭 `RERANK_ENABLED` 可省去这部分依赖（需自行精简 requirements）
 - 尚缺少单元测试
 
 **规划中**
@@ -510,9 +612,12 @@ RAG 最大的风险是模型在知识不足时编造答案。Prompt 中强制"�
 - 人才流程：收藏 / 面试 / Offer 状态机（已有模块骨架，待接入数据库与接口）
 - 岗位与简历的向量化匹配（当前匹配为规则加权评分）
 - 技能标签自动生成接入主流程（`talent/tagger` 规则已就绪）
-- Docker 部署与一键启动
 - RAG 召回效果评估脚本
 - Web 管理后台
+
+**已完成**
+
+- ✅ Docker Compose 一键部署（MySQL + Ollama + 应用）
 
 ---
 

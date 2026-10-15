@@ -6,8 +6,7 @@ Knowledge Embedding
 
 import time
 
-from ollama import embed
-
+from app.ai.llm import get_client
 from app.core.config import OLLAMA_EMBED_MODEL
 from app.core.logger import logger
 from app.system.metrics import metrics
@@ -22,7 +21,7 @@ def get_embedding(text: str) -> list[float]:
 
     logger.info(f"Embedding: {OLLAMA_EMBED_MODEL}")
 
-    response = embed(
+    response = get_client().embed(
         model=OLLAMA_EMBED_MODEL,
         input=text
     )

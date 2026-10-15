@@ -99,6 +99,23 @@ LLM_TEMPERATURE = 0
 LLM_MAX_TOKENS = 1024
 
 # ==========================================================
+# Reranker
+# ==========================================================
+
+# 是否启用 CrossEncoder 二次重排
+#
+# True ：首次启动会从 HuggingFace 下载
+#        BAAI/bge-reranker-v2-m3（约 2GB），效果最好
+# False：不加载重排模型，改用 RRF 排名融合兜底，
+#        启动快、镜像小，适合容器 / 演示环境
+#
+# 需要时在 .env 中设置 RERANK_ENABLED=false
+RERANK_ENABLED = os.getenv(
+    "RERANK_ENABLED",
+    "true"
+).lower() in ("1", "true", "yes", "on")
+
+# ==========================================================
 # Performance
 # ==========================================================
 
@@ -106,7 +123,10 @@ LLM_MAX_TOKENS = 1024
 DEBUG = True
 
 # 是否打印 Retriever Context
-PRINT_CONTEXT = True
+PRINT_CONTEXT = os.getenv(
+    "PRINT_CONTEXT",
+    "true"
+).lower() in ("1", "true", "yes", "on")
 
 # 是否回显 SQLAlchemy 执行的 SQL（开发排查用，默认关闭）
 # 需要时在 .env 中设置 DEBUG_SQL=true

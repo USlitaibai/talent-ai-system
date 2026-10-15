@@ -71,11 +71,24 @@ data/resumes/test_jd.txt
 *.bak
 
 # =========================
+# Test Cache
+# =========================
+.pytest_cache/
+
+# =========================
+# Patch (Temporary)
+# =========================
+fixes.patch
+
+# =========================
+# Docker Runtime Data
+# =========================
+docker/vectors/
+docker/uploads/
+docker/output/
+
+# =========================
 # OS
 # =========================
 .DS_Store
 Thumbs.db
-# =========================
-# ÁÙÊ±²¹¶¡ÎÄ¼þ
-# =========================
-fixes.patch

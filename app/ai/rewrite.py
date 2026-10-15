@@ -4,8 +4,7 @@ Query Rewrite
 查询改写
 """
 
-from ollama import chat
-
+from app.ai.llm import get_client
 from app.core.config import OLLAMA_MODEL
 from app.core.logger import logger
 
@@ -33,7 +32,7 @@ def rewrite(question: str):
 
     logger.info("开始 Query Rewrite")
 
-    response = chat(
+    response = get_client().chat(
 
         model=OLLAMA_MODEL,
 

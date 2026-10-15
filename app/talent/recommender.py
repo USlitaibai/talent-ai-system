@@ -6,8 +6,7 @@ AI 人才推荐报告
 
 import json
 
-from ollama import chat
-
+from app.ai.llm import get_client
 from app.core.config import OLLAMA_MODEL
 from app.core.logger import logger
 
@@ -57,7 +56,7 @@ def generate_recommendation(
    不建议进入下一轮
 """
 
-    response = chat(
+    response = get_client().chat(
         model=OLLAMA_MODEL,
         messages=[
             {

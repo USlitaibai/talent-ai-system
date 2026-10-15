@@ -1,0 +1,54 @@
+# ==========================================================
+# 构建上下文排除
+#
+# 关键：venv 目录约 1.19GB，
+# 不排除会让 docker build 上传巨量数据、非常慢。
+#
+# 注意：docker/ 目录必须保留，
+# 因为 Dockerfile 需要 COPY docker/vectors/ 预置向量库。
+# ==========================================================
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 版本控制与 IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.eggs/
+*.egg-info/
+.pytest_cache/
+
+# 日志
+logs/
+app/logs/
+*.log
+
+# 敏感配置（容器内通过环境变量注入）
+.env
+.env.*
+
+# 运行期数据（容器内通过卷挂载，不打包进镜像）
+data/
+output/
+
+# 文档与补丁
+README.md
+fixes.patch
+
+# 临时文件
+*.tmp
+*.bak
+
+# 其他
+.DS_Store
+Thumbs.db

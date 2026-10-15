@@ -6,9 +6,8 @@ Knowledge Service
 
 import time
 
-from ollama import chat
-
 from app.ai.cache import cache
+from app.ai.llm import get_client
 from app.ai.prompt import build_rag_prompt
 
 from app.core.config import (
@@ -154,7 +153,7 @@ def ask(question: str):
 
     llm_start = time.perf_counter()
 
-    response = chat(
+    response = get_client().chat(
         model=OLLAMA_MODEL,
         messages=[
             {
