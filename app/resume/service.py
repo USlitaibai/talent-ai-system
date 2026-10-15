@@ -2,16 +2,9 @@
 Resume Service
 
 简历业务层
-
-负责：
-
-1. 单份简历解析
-2. 批量简历解析
-3. AI提取信息
-4. 保存数据库
-5. 写入知识库
 """
 
+import uuid
 from pathlib import Path
 
 from app.ai.llm import extract_resume_info
@@ -25,264 +18,187 @@ from app.resume.repository import (
     save_resume,
 )
 
-SUPPORTED_SUFFIX = {
-    ".pdf",
-    ".docx",
-    ".txt"
-}
-
+SUPPORTED_SUFFIX = {".pdf", ".docx", ".txt"}
 
 # ==========================================================
-# 构建知识库文本
+# 任务状态表（内存存储，重启即丢，够演示用）
 # ==========================================================
+
+_import_tasks: dict[str, dict] = {}
+
+
+def get_import_task(task_id: str) -> dict | None:
+    """查询导入任务状态"""
+    return _import_tasks.get(task_id)
+
+
+def list_import_tasks() -> list[dict]:
+    """列出所有导入任务"""
+    return list(_import_tasks.values())
+
 
 def _build_resume_document(data: dict) -> str:
-    """
-    将结构化简历转换为知识库文本
-    """
-
+    """将结构化简历转换为知识库文本"""
     skills = data.get("skills", [])
-
     if isinstance(skills, list):
         skills = "、".join(skills)
 
     return f"""
 姓名：{data.get("name", "")}
-
 学校：{data.get("school", "")}
-
 专业：{data.get("major", "")}
-
 研究方向：
 {data.get("research_direction", "")}
-
 技能：
 {skills}
-
 论文：
 {data.get("papers", "")}
 """.strip()
 
 
-# ==========================================================
-# 单份解析
-# ==========================================================
-
 def parse_and_save_resume(file_path: str | Path):
-    """
-    解析一份简历
-    """
-
+    """解析一份简历"""
     resume_text = parse_resume(file_path)
-
     result = extract_resume_info(resume_text)
-
     db_result = save_resume(result)
 
-    # 数据库新增时才写入知识库
     if db_result["status"] == "created":
-
         knowledge_text = _build_resume_document(result)
-
-        add_document(
-            knowledge_text,
-            source="resume"
-        )
+        add_document(knowledge_text, source="resume")
 
     return {
         "resume": result,
         "database": db_result
     }
 
+
 # ==========================================================
-# ZIP解析
+# ZIP解析（同步核心逻辑，供后台任务调用）
 # ==========================================================
 
-def zip_parse_and_save_resume(zip_path: str | Path):
-    """
-    ZIP简历导入
-    """
+def _process_zip_task(task_id: str, zip_path: str | Path):
+    """后台执行ZIP导入任务"""
+    task = _import_tasks[task_id]
+    task["status"] = "processing"
 
     importer = ZipImporter()
 
     try:
-
         importer.extract(zip_path)
-
         files = importer.scan()
 
-        logger.info(f"ZIP 共发现 {len(files)} 份简历")
+        task["total"] = len(files)
+        logger.info(f"ZIP任务 {task_id} 共发现 {len(files)} 份简历")
 
-        statistics = {
-            "total": 0,
-            "success": 0,
-            "duplicate": 0,
-            "failed": 0,
-            "detail": []
-        }
-
-        for file in files:
-
-            statistics["total"] += 1
-
+        for i, file in enumerate(files):
             try:
-
                 data = parse_and_save_resume(file)
-
                 status = data["database"]["status"]
 
                 if status == "created":
-                    statistics["success"] += 1
-                else:
-                    statistics["duplicate"] += 1
+                    task["success"] += 1
+                elif status == "duplicate":
+                    task["duplicate"] += 1
 
-                statistics["detail"].append({
-
+                # 把每份简历的解析结果都存下来
+                task["detail"].append({
                     "file": file.name,
-
                     "status": status,
-
-                    "resume_id": data["database"]["id"]
-
+                    "resume_id": data["database"]["id"],
+                    "name": data["resume"].get("name", ""),
+                    "skills": data["resume"].get("skills", []),
                 })
 
             except Exception as e:
-
                 logger.exception(e)
-
-                statistics["failed"] += 1
-
-                statistics["detail"].append({
-
+                task["failed"] += 1
+                task["detail"].append({
                     "file": file.name,
-
                     "status": "failed",
-
                     "error": str(e)
-
                 })
 
-        return statistics
+            task["progress"] = f"{i + 1}/{len(files)}"
+
+        task["status"] = "done"
+        logger.info(f"ZIP任务 {task_id} 完成")
+
+    except Exception as e:
+        logger.exception(e)
+        task["status"] = "failed"
+        task["error"] = str(e)
 
     finally:
-
         importer.cleanup()
-        
-# ==========================================================
-# 批量解析
-# ==========================================================
 
-def batch_parse_and_save_resume(folder: str | Path):
-    """
-    批量解析目录中的所有简历
-    """
 
-    folder = Path(folder)
+def start_zip_import_task(zip_path: str | Path) -> str:
+    """启动ZIP导入后台任务，返回任务ID"""
+    task_id = uuid.uuid4().hex[:8]
 
-    if not folder.exists():
-        raise FileNotFoundError(folder)
-
-    logger.info(f"开始批量解析：{folder}")
-
-    statistics = {
+    _import_tasks[task_id] = {
+        "task_id": task_id,
+        "status": "pending",
         "total": 0,
         "success": 0,
         "duplicate": 0,
         "failed": 0,
-        "detail": []
+        "progress": "0/0",
+        "detail": [],
+        "error": None,
+    }
+
+    return task_id
+
+
+def batch_parse_and_save_resume(folder: str | Path):
+    """批量解析目录中的所有简历"""
+    folder = Path(folder)
+    if not folder.exists():
+        raise FileNotFoundError(folder)
+
+    statistics = {
+        "total": 0, "success": 0, "duplicate": 0, "failed": 0, "detail": []
     }
 
     for file in folder.iterdir():
-
         if not file.is_file():
             continue
-
         if file.suffix.lower() not in SUPPORTED_SUFFIX:
             continue
 
         statistics["total"] += 1
 
-        logger.info(f"正在处理：{file.name}")
-
         try:
-
             data = parse_and_save_resume(file)
-
             status = data["database"]["status"]
 
             if status == "created":
-
                 statistics["success"] += 1
-
             elif status == "duplicate":
-
                 statistics["duplicate"] += 1
 
             statistics["detail"].append({
-
                 "file": file.name,
-
                 "status": status,
-
                 "resume_id": data["database"]["id"]
-
             })
 
         except Exception as e:
-
             logger.exception(e)
-
             statistics["failed"] += 1
-
             statistics["detail"].append({
-
                 "file": file.name,
-
                 "status": "failed",
-
                 "error": str(e)
-
             })
-
-    logger.info("批量解析完成")
 
     return statistics
 
 
-# ==========================================================
-# 查询全部
-# ==========================================================
-
 def list_resumes():
-    """
-    查询全部简历
-    """
-
     return get_all_resumes()
 
 
-# ==========================================================
-# 查询单份
-# ==========================================================
-
 def get_resume(resume_id: int):
-    """
-    查询单份简历
-    """
-
     return get_resume_by_id(resume_id)
-
-
-# ==========================================================
-# 测试
-# ==========================================================
-
-if __name__ == "__main__":
-
-    BASE = Path(__file__).resolve().parents[2]
-
-    folder = BASE / "data" / "resumes"
-
-    result = batch_parse_and_save_resume(folder)
-
-    print(result)
